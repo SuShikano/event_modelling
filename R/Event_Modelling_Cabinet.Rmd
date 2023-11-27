@@ -1,0 +1,448 @@
+---
+title: 'Event History Modelling: Cabinet Data'
+author: "Susumu Shikano"
+date: "2023-11-22"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+In this markdown, we estimate different event history models by using Alt and King’s (1994) data on cabinet failure.
+
+## Preparation
+
+
+```{r , warning=FALSE}
+library(foreign)
+library(flexsurv)
+
+setwd("../data")
+
+
+rawdata <- read.dta("Event_History_Course_Cabinet.dta")
+
+```
+
+We can check the raw data:
+
+```{r}
+head(rawdata)
+
+```
+
+The rows correspond to the individual cabinets (n=314). The data contains the following variables:
+
+- durat: duration
+- invest: dummy for requirement of legislative investiture vote
+- polar: polarization
+- fract: fractionalization
+- numst: dummy for government majority in the parliament
+- format: formation attempts
+- postelec: dummy for post-election 
+- caretakr: dummy for care taker government
+
+The main outcome variable is $durat$ which measures the duration of the cabinet in month.
+
+```{r}
+
+par(mfrow=c(1,3))
+hist(rawdata$durat,br=seq(0,60,5),
+     main="All obs.",xlab="Month")
+hist(rawdata$durat[rawdata$censor==1],br=seq(0,60,5),
+     main="Terminated obs.",xlab="Month")
+hist(rawdata$durat[rawdata$censor==0],br=seq(0,60,5),
+     main="Survived til next election",xlab="Month")
+
+
+```
+
+The left-hand panel shows duration of all cabinets in the dataset. The mid panel shows in contrast only the cabinets which were terminated during a legislative period. And the right-hand panel shows those which survived until the subsequent election. 
+
+
+This specific type of the dependent variable can be processed for event modelling by using $Surv$ function by considering the censoring variable ($censor$):
+
+```{r}
+
+Surv(rawdata$durat,rawdata$censor)
+
+```
+
+## OLS 
+
+Before estimating the event history models, we can regress the duration variable on the covariates:
+
+```{r}
+summary(lm.out <- lm(durat~ invest + polar + 
+          numst + format + postelec+caretakr,
+          data=rawdata))
+```
+
+This analysis does not consider that some cabinets did not experience failure. Therefore, we can exclude such cases and regress again the same outcome variable on the covariates:
+
+```{r}
+only.censored <- rawdata[rawdata$censor==1,]
+nrow(only.censored)
+
+summary(lm.out.censored <- lm(durat~ invest + polar + 
+          numst + format + postelec+caretakr,
+          data=only.censored))
+```
+
+If one compares both results, the latter result without cabinets survived until the next election has significantly smaller effects for some covariates (invest, numst, postelec). While the second analysis shows a better diagnostics result (see below), the analysis does not take into account a significant number of cabinets (n=43) in the dataset.
+
+
+```{r}
+par(mfrow=c(1,2))
+plot(lm.out,which=1)
+plot(lm.out.censored,which=1)
+
+```
+
+
+## Estimating parametric models
+
+We first estimate the following six parametric models:
+
+- Exponential
+- Weibull
+- log normal
+- log logistic
+- Gompertz
+- Generalized gamma.
+
+As covariate, we include the same set of variables (investiture, polarization, government's seat share,
+formation, post-election and care taker.) The models differ however in additional parameters, therefore we will have different sets of parameters.
+
+```{r }
+model.label <- c("exponential",
+              "weibull",
+              "lnorm",
+              "llogis",
+              "gompertz",
+              "gengamma")
+
+all.para.out <- vector("list",length(model.label))
+
+for (i.model in 1:length(model.label)){
+  
+est.res <- flexsurvreg(Surv(durat,censor) ~ 
+                         invest + polar + 
+                         numst + format + postelec+caretakr,
+                         data=rawdata,
+                         dist=model.label[i.model])
+all.para.out[[i.model]] <- list(model=model.label[i.model],
+                                est=est.res)
+
+print("-------------------------------------------")
+print(paste("MODEL:",model.label[i.model]))
+print(est.res)
+}
+
+```
+
+We can plot the hazard functions with 95% confidence intervals (red) against kernel-based smooth nonparametric hazard (black):
+
+```{r}
+par(mfrow=c(2,3))
+for (i.model in 1:length(model.label)){
+  plot(all.para.out[[i.model]]$est,type="hazard",
+       main=model.label[i.model])
+}
+```
+
+We further can plot the survival functions:
+
+```{r}
+par(mfrow=c(2,3))
+for (i.model in 1:length(model.label)){
+  plot(all.para.out[[i.model]]$est,type="survival",
+       main=model.label[i.model])
+}
+
+```
+
+
+
+## Cox PH model
+
+We can now switch to Cox PH model keeping the covariate constant:
+
+
+```{r}
+est.res <- coxph(Surv(durat,censor) ~ invest + polar + 
+              numst + format + postelec+caretakr,data=rawdata)
+print(est.res)
+
+
+```
+
+We can now check the situation at individual time points:
+
+```{r}
+summary(survfit(est.res))
+
+```
+At each time point, the table above gives the number of observations at risk, number of the observed events, the resulting survival rate and their variance/interval estimate.
+
+Due to the rough data (unit = month), we have tie events at most time points.
+
+
+We can now plot the survival function. The first plot is based on the empirical data, the other plot on the right-hand side is based on the hypothetical situation where:
+
+- there is legal requirement of investiture vote.
+- there is no polarization.
+- the cabinet has a parliamentary majority.
+- the cabinet has formed after the first attempt right after a parliamentary election.
+- the cabinet is not a care taker government.
+
+```{r}
+
+par(mfrow=c(1,2))
+plot(survfit(est.res))
+plot(survfit(est.res,
+             newdata=data.frame(invest=1,polar=0,numst=1,format=1,postelec=1,caretakr=0
+                                )))
+
+```
+
+The left-hand side plot is based on the simple Kaplan-Meier-estimator: $\hat S (t) = \prod_{i=1}^{t-1} \left(1-\frac{d_i}{n_i} \right)$ with $i \in \{1, \ldots, K\}$ being the time points when at least one event was observed. $d_i$ is the number of event at $t_i$ and $n_i$ is the size of the risk set at $t_i$.  
+
+We can also compare the effect of requirement of investiture votes where the other variables are kept to be the mean:
+
+```{r}
+
+par(mfrow=c(1,2))
+new.dat <- data.frame(invest=c(0,1), polar=rep(mean(rawdata$polar),2), 
+                       fract=rep(mean(rawdata$fract),2),
+                       numst=rep(mean(rawdata$numst),2),format=rep(mean(rawdata$format),2),
+                       postelec=rep(mean(rawdata$postelec),2),
+                       caretakr=rep(mean(rawdata$caretakr),2))
+plot(survfit(est.res,newdata=new.dat), 
+                            lty=c(1,2),col=c("red","blue"))
+plot(survfit(est.res,newdata=new.dat),conf.int=T, 
+                            lty=c(1,2),col=c("red","blue"))
+
+
+```
+
+
+As we have seen above, there are many tie events due to the duration measure based on month. To deal with such tie events, there are several possibilities, among which the following solutions are implemented in the survival package:
+
+- Efron method (default and the result above)
+- Breslow method
+- Exact partial likelihood
+
+
+```{r}
+
+
+est.res <- coxph(Surv(durat,censor) ~ invest + polar + 
+              numst + format + postelec+caretakr,data=rawdata,
+              ties="efron")
+print(est.res)
+
+
+est.res <- coxph(Surv(durat,censor) ~ invest + polar + 
+              numst + format + postelec+caretakr,data=rawdata,
+              ties="breslow")
+print(est.res)
+
+est.res <- coxph(Surv(durat,censor) ~ invest + polar + 
+              numst + format + postelec+caretakr,data=rawdata,
+              ties="exact")
+print(est.res)
+
+```
+
+In our case, fortunately, the different methods do not produce any significant differences between the estimates.
+
+
+
+## Discrete time modelling
+
+### Converting data into the counting process style
+
+We convert the original data into the counting process format. For this purpose, the survSplit function is useful:
+
+
+```{r}
+id <- 1:dim(rawdata)[1]
+rawdata.with.id <- cbind(id,rawdata)
+
+# --------------------------------------------------------------------------
+# For time varying covariates
+cut.points <- seq(0.5,max(rawdata$durat),by=0.5)
+cp.data <- survSplit(data = rawdata.with.id, cut = cut.points, 
+     end = "durat",start = "time0", event = "censor")
+
+cp.data <- cp.data[order(cp.data$id),]
+
+head(cp.data,n=10)
+
+```
+
+For comparison, you can check the original data again:
+
+```{r}
+head(rawdata.with.id)
+```
+
+
+### Binary logit model with counting process data
+
+To the counting process data, we can just apply the binary logit model to estimate an event model:
+
+```{r}
+
+est.res <- glm(censor ~ invest + polar + 
+              numst + format + postelec+caretakr,data=cp.data,family=binomial(link="logit"))
+summary(est.res)
+
+```
+
+
+
+
+
+The above model is however based on the assumption that the hazard is constant over time, which is quite restrictive. This can be relaxed by using time depending variables.
+
+The most simple approach is to add the dummy variable for all individual time points:
+
+```{r}
+# temporal dummy
+est.res <- glm(censor ~ invest + polar + 
+              numst + format + postelec+caretakr +
+              factor(durat)
+              ,data=cp.data,family=binomial(link="logit"))
+summary(est.res)
+
+intercept <- coef(est.res)["(Intercept)"]
+time.dummy <- coef(est.res)[substr(names(coef(est.res)),1,13)=="factor(durat)"]
+time.hazard <- exp(intercept + time.dummy)
+
+plot(seq(1,59,by=0.5),time.hazard,type="l")
+
+```
+This model requires a large amount of dummy variables. The estimated time dependent hazard is based on a few data points. 
+
+Alternaitvely, we can include the duration variable itself.
+
+
+```{r}
+# ---------------------------------------------------------------------------------------------------
+# linear function
+est.res <- glm(censor ~ invest + polar + 
+              numst + format + postelec+caretakr +
+              durat
+              ,data=cp.data,family=binomial(link="logit"))
+summary(est.res)
+
+intercept <- coef(est.res)["(Intercept)"]
+time.coef <- coef(est.res)["durat"]
+time.hazard <- exp(intercept + time.coef * (0:max(cp.data$durat)))
+
+plot(c(0:max(rawdata$durat)),time.hazard,type="l")
+
+```
+
+Note that the estimated time dependent hazard is not linear due to the binary logit model.
+
+The duration variable can be also added after logarithmization:
+
+```{r}
+# ---------------------------------------------------------------------------------------------------
+# natural log
+est.res <- glm(censor ~ invest + polar + 
+              numst + format + postelec+caretakr +
+              log(durat)
+              ,data=cp.data,family=binomial(link="logit"))
+summary(est.res)
+
+intercept <- coef(est.res)["(Intercept)"]
+time.coef <- coef(est.res)["log(durat)"]
+time.hazard <- exp(intercept + time.coef * log((0:max(cp.data$durat))))
+
+plot(c(0:max(cp.data$durat)),time.hazard,type="l")
+
+```
+
+Further, the duration variable can be considered in the quadratic function:
+
+```{r}
+
+# ---------------------------------------------------------------------------------------------------
+# Quadratic
+durat2 <- cp.data$durat^2
+cp.data <- cbind(cp.data,durat2)
+est.res <- glm(censor ~ invest + polar + 
+              numst + format + postelec+caretakr +
+              durat + durat2
+              ,data=cp.data,family=binomial(link="logit"))
+summary(est.res)
+
+intercept <- coef(est.res)["(Intercept)"]
+time.coef <- coef(est.res)["durat"]
+time.coef2 <- coef(est.res)["durat2"]
+time.hazard <- exp(intercept + time.coef * (0:max(cp.data$durat)) + time.coef2 * (0:max(cp.data$durat))^2 )
+
+plot(c(0:max(cp.data$durat)),time.hazard,type="l")
+
+```
+
+### Cox PH model with count process data
+
+Now we can estimate Cox PH model by using conditional logit model. For this purpose, we first convert the rawdata in the format for clogit. This data is different from the above data:
+
+```{r}
+# ---------------------------------------------------------------------------------------------------
+# For Cox regression
+# ---------------------------------------------------------------------------------------------------
+cut.points <- unique(rawdata$durat[rawdata$censor == 1])
+cox.cp.data <- survSplit(data = rawdata.with.id, cut = cut.points, 
+     end = "durat",start = "time0", event = "censor")
+
+
+head(cp.data,n=20)
+head(cox.cp.data,n=20)
+
+cox.cp.data <- cox.cp.data[order(cox.cp.data$time0),]
+head(cox.cp.data,n=20)
+
+```
+
+Now we can estimate the Cox model by using clogit:
+
+```{r}
+clogit(censor ~ invest + polar + 
+              numst + format + postelec+caretakr+
+              strata(time0) ,
+              method="exact",
+              data=cox.cp.data)
+
+```
+
+For comparison, we can estimate again the same model by using coxph().
+
+
+```{r}
+# ---------------------------------------------------------------------------------------------------
+# Comparison with coxph()
+est.res <- coxph(Surv(durat,censor) ~ invest + polar + 
+              numst + format + postelec+caretakr,
+              ties="exact", 
+              data=rawdata)
+print(est.res)
+
+```
+
+
+
+
+
+
+
+
+
