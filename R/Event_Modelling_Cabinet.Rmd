@@ -440,9 +440,77 @@ print(est.res)
 
 
 
+## Flexible parametric model: Royceton-Palmer
+
+We first estimate the spline with k=0, which is equivalent to Weibul model.
+
+
+```{r}
+
+
+est.res.k0 <- flexsurvspline(Surv(durat,censor) ~ invest + polar + 
+                   numst + format + postelec+caretakr,data=rawdata,
+                   k=0,scale="hazard")
+print(est.res.k0)
+
+
+
+```
+
+For comparison, here is the result of the above Weibull model:
+
+```{r}
+flexsurvreg(formula = Surv(durat, censor) ~ invest + polar + 
+    numst + format + postelec + caretakr, data = rawdata, dist = "weibullph")
+```
+
+Note that here the parametrization is based on PH and not AFT like the estimate above.
+
+Now, we can introduce the knot point, which varies between 1 and 10:
+
+```{r}
+
+all.royceton <- vector("list",11)
+all.royceton[[1]] <- est.res.k0
+
+for (k in 1:10){
+  all.royceton[[k+1]] <- flexsurvspline(Surv(durat,censor) ~ invest + polar + 
+                   numst + format + postelec+caretakr,data=rawdata,
+                   k=k,scale="hazard")
+
+}
+
+all.para.label <- names(all.royceton[[11]]$coefficients)
+
+all.results <- NULL
+for (k in 0:10){
+  temp.result <- cbind(all.royceton[[k+1]]$coefficients,sqrt(diag(all.royceton[[k+1]]$cov))) 
+  key <- match(all.para.label , rownames(temp.result))
+  all.results <- cbind(all.results,temp.result[key,])
+}
+
+rownames(all.results) <- all.para.label
+
+col.label  <- paste0("k=",0:10)
+
+colnames(all.results) <- rep("",22)
+colnames(all.results)[seq(1,21,by=2)] <- col.label
+
+print(all.results,digits=3)
+
+```
 
 
 
 
+```{r}
+plot(all.royceton[[1]],ci=TRUE,type="hazard",col="red")
+
+lines(all.royceton[[2]],ci=TRUE,type="hazard",col="blue")
+
+lines(all.royceton[[7]],ci=TRUE,type="hazard"
+      ,col="green")
+legend("topleft",lty=1,col=c("red","blue","blue"),c("k=0","k=1","k=6"),bty="n")
+```
 
 
