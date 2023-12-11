@@ -1,3 +1,47 @@
+# Exponential models
+
+expo.h.t <- function(t){
+  exp( beta0 + beta1*x)*t/t
+}
+
+expo.S.t <- function(t){
+   exp(- expo.h.t(t) * t)
+}
+
+expo.f.t <- function(t){
+  expo.h.t(t) * exp(- expo.h.t(t) * t)
+} 
+
+t <- 2
+beta0 <- -0.5
+beta1 <- 0.2
+x <- 5
+
+pdf(file="figures/Exponentialmodel_S_f_h.pdf",onefile = F,
+    height = 3,width=8,pointsize=13)
+
+par(mfrow=c(1,3))
+add.vec <- c(F,rep(T,4))
+for (x in c(1,3,5)){
+  curve(expo.S.t,0,10,xlab="t",ylab="S(t)",
+        main="S(t)",ylim=c(0,1),add=add.vec[x],
+        lwd=x/2)
+}
+legend("topright",lty=1,lwd=c(1,3,5)/2,legend=paste0("x=",c(1,3,5)),bty="n")
+for (x in c(1,3,5)){
+  curve(expo.f.t,0,10,xlab="t",ylab="f(t)",
+        main="f(t)",ylim=c(0,1.5),add=add.vec[x],
+        lwd=x/2)
+}
+for (x in c(1,3,5)){
+curve(expo.h.t,0,10,xlab="t",ylab="h(t)",
+      main="h(t)",ylim=c(0,2),add=add.vec[x],
+      lwd=x/2)
+}
+dev.off()
+
+
+
 # Log normal models
 
 
