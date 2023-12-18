@@ -1,7 +1,7 @@
 ---
 title: 'Event History Modelling: Cabinet Data'
 author: "Susumu Shikano"
-date: "2023-11-22"
+date: "`r Sys.Date()`"
 output: html_document
 ---
 
@@ -224,6 +224,8 @@ plot(survfit(est.res,
 
 
 ```
+
+
 Both upper panels show the survival function based on the empirical data (the left panel) and the counter-factual scenario stated above (the right panel). The left-hand side plot is based on the simple Kaplan-Meier-estimator: $\hat S (t) = \prod_{i=1}^{t-1} \left(1-\frac{d_i}{n_i} \right)$ with $i \in \{1, \ldots, K\}$ being the time points when at least one event was observed. $d_i$ is the number of event at $t_i$ and $n_i$ is the size of the risk set at $t_i$.  
 
 The lower panels show the cumultative hazard function. Due to the proportional hazard property, both functions have the same form, but they differ in the scale (see the y-axis of both panels.)
@@ -604,7 +606,7 @@ abline(h=0,col="red")
 
 ```
 
-The expected martingale residuals conditioned by the different covariates are close to zero, which implies no need to change the functional form of the model.
+The expected martingale residuals conditioned by the different covariates are close to zero, which implies no need to change the linear function in  the model.
 
 
 #### Poorly prediced obaservations based on deviance residuals
@@ -684,6 +686,15 @@ The scales on the y-axes inform that the impact of individual cases is quite lim
 
 
 #### Testing the PH property via piecewise regression
+
+The most straightforward way to check the PH assumption is to repeat the analysis based on the subsamples with different duration.
+
+
+Here, we can divide the data into two subdata with the almost same size:
+
+- duration shorter than 15 months (n=`r sum(rawdata$duration<15)`)
+- duration not shorter than 15 months (n=`r sum(rawdata$duration>=15)`)
+
 ```{r}
 all.res <- NULL
 for (i in 1:3){
@@ -695,11 +706,15 @@ for (i in 1:3){
                   numst2 + crisis,
                   ties="exact", 
                   data=this.data)
+    print(c("All observations","duration < 15","duration >= 15")[i])
     print(est.res)
+    print("-------------------------------------------")
     all.res <- rbind(all.res,coef(summary(est.res))[,c(1,3)])
 }
 
 ```
+
+The estimates can be compared in the following figure:
 
 ```{r}
 
@@ -715,12 +730,12 @@ coef.ci(estimates = all.res[,1],se=all.res[,2],
 abline(v=0,lty=2)
 ```
 
-
+Accordingly, two variables, polarization and majority status, have smaller, and no significant effects on the risk if we only consider the duration under 15 months. This indicates possible violation of the PH assumption.
 
 
 #### Testing the PH property via Schoenfeld Residuals
 
-
+While the above piecewise regression is straightforward, its result depends on how one divide the data. Alternatively, we can also utilize Schoenfeld residuals to check the PH assumption.
 
 ```{r,fig.dim = c(8, 8)}
 
@@ -734,7 +749,7 @@ plot(cox.zph(est.res, transform="identity"))
 
 
 ```
-
+According to the plot, there are no clear patterns of residuals over time, which indicates no violation of the PH assumption. The results can also be quantified in a statistical test:
 
 
 ```{r}
@@ -742,40 +757,50 @@ plot(cox.zph(est.res, transform="identity"))
 test.res <- cox.zph(est.res, transform="identity")
 test.res
 ```
+Accordingly, none of the covariates nor the global test indicates any significant violation of the PH assumption.
 
-## Frailty model
+
+## Heterogeneity in the data
+
+### Robust standard error based on the Sandwitch estimator
 
 
+```{r}
+table(rawdata$country)
+```
+
+The individual cabinets included in the dataset here are clustered in countries, while we have not considered any country-specific factors. This might have caused some errors in the estimates and underestimation of their standard errors in the  results of the naive Cox model below. 
 
 ```{r}
 
 est.res <- coxph(Surv(duration,ciep12) ~ invest + polar + 
               numst2 + crisis,
-              #ties="exact", 
               robust=FALSE,
               data=rawdata)
 print(est.res)
 
 ```
 
+To deal with possible heterogeneity, we can estimate the robust standard errors by using the Sandwich-estimator:
+
+
 ```{r}
 
 est.res <- coxph(Surv(duration,ciep12) ~ invest + polar + 
               numst2 + crisis,
-              #ties="exact", 
               robust=TRUE,
               data=rawdata)
 print(est.res)
 
 ```
 
+Further, we can also take into account the clustering based on countries:
 
 
 ```{r}
 
 est.res <- coxph(Surv(duration,ciep12) ~ invest + polar + 
               numst2 + crisis,
-              #ties="exact", 
               cluster=country,
               data=rawdata)
 print(est.res)
@@ -784,14 +809,47 @@ print(est.res)
 
 
 
+### Frailty model
+
+
+In the above analysis, we only corrected the standard errors. We can now estimate another model by introducing frailty.
+
 ```{r}
 library(frailtyEM)
 
 est.res.frail <- emfrail(Surv(duration,ciep12) ~ invest + polar + 
               numst2 + crisis + cluster(country),
                 data=rawdata, distribution=emfrail_dist(dist="gamma"))
-print(est.res.frail)
+summary(est.res.frail)
+
+```
 
 
+
+
+```{r}
+par(mfcol=c(1,2))
+plot(est.res.frail,
+     newdata=data.frame(invest=1,polar=0,numst2=1,crisis=30
+                                ),
+     type="pred",type_pred = "marginal",
+     main="Investiture required",ylim=c(0,2),xlim=c(0,50))
+par(new=T)
+plot(survfit(est.res,
+             newdata=data.frame(invest=1,polar=0,numst2=1,crisis=30
+                                )),fun="cumhaz",main="Naive Cox",ylab="Cumulative hazard",ylim=c(0,2),xlim=c(0,50),col="red",ann=F,axes=F)
+
+plot(est.res.frail,
+     newdata=data.frame(invest=0,polar=0,numst2=1,crisis=30
+                                ),
+     type="pred",,type_pred = "marginal",
+     main="No investiture",ylim=c(0,2))
+par(new=T)
+
+plot(survfit(est.res,
+             newdata=data.frame(invest=0,polar=0,numst2=1,crisis=30
+                                )),fun="cumhaz",ylab="Cumulative hazard",ylim=c(0,2),xlim=c(0,50),col="red",ann=F,axes=F)
+
+legend("topleft",col=c("black","red"),lty=1,c("Frailty","Naive"),bty="n")
 ```
 
