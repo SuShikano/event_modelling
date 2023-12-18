@@ -22,8 +22,10 @@ library(flexsurv)
 setwd("../data")
 
 
-rawdata <- read.dta("Event_History_Course_Cabinet.dta")
+#rawdata <- read.dta("Event_History_Course_Cabinet.dta")
+rawdata <- read.csv("coalition2.csv")
 
+rawdata$country[is.na(rawdata$country)] <- "unknown"
 ```
 
 We can check the raw data:
@@ -35,38 +37,41 @@ head(rawdata)
 
 The rows correspond to the individual cabinets (n=314). The data contains the following variables:
 
-- durat: duration
-- invest: dummy for requirement of legislative investiture vote
-- polar: polarization
+- duration: duration
+- ciep12: dummy variable whether government is terminated by 12 months prior to the constitutional interelection period
+- invest: dummy for legal requirement of legislative investiture vote
 - fract: fractionalization
-- numst: dummy for government majority in the parliament
-- format: formation attempts
-- postelec: dummy for post-election 
-- caretakr: dummy for care taker government
+- polar: polarization
+- numst2: dummy for government majority in the parliament
+- crisis: days needed to form the government
+- country: country
+#- format: formation attempts
+#- postelec: dummy for post-election 
+#- caretakr: dummy for care taker government
 
-The main outcome variable is $durat$ which measures the duration of the cabinet in month.
+The main outcome variable is $duration$ which measures the duration of the cabinet in month.
 
 ```{r}
 
 par(mfrow=c(1,3))
-hist(rawdata$durat,br=seq(0,60,5),
+hist(rawdata$duration,br=seq(0,60,5),
      main="All obs.",xlab="Month")
-hist(rawdata$durat[rawdata$censor==1],br=seq(0,60,5),
+hist(rawdata$duration[rawdata$ciep12==1],br=seq(0,60,5),
      main="Terminated obs.",xlab="Month")
-hist(rawdata$durat[rawdata$censor==0],br=seq(0,60,5),
-     main="Survived til next election",xlab="Month")
+hist(rawdata$duration[rawdata$ciep12==0],br=seq(0,60,5),
+     main="Survived til 12M before CIEP",xlab="Month")
 
 
 ```
 
-The left-hand panel shows duration of all cabinets in the dataset. The mid panel shows in contrast only the cabinets which were terminated during a legislative period. And the right-hand panel shows those which survived until the subsequent election. 
+The left-hand panel shows duration of all cabinets in the dataset. The mid panel shows in contrast only the cabinets which were terminated during a legislative period, more exactly speaking by 12 months before the constitutional interelection period (CIEP). And the right-hand panel shows those which survived until 12 months before CIEP. 
 
 
-This specific type of the dependent variable can be processed for event modelling by using $Surv$ function by considering the censoring variable ($censor$):
+This specific type of the dependent variable can be processed for event modelling by using $Surv$ function by considering the event variable ($ciep12$):
 
 ```{r}
 
-Surv(rawdata$durat,rawdata$censor)
+Surv(rawdata$duration,rawdata$ciep12)
 
 ```
 
@@ -75,23 +80,23 @@ Surv(rawdata$durat,rawdata$censor)
 Before estimating the event history models, we can regress the duration variable on the covariates:
 
 ```{r}
-summary(lm.out <- lm(durat~ invest + polar + 
-          numst + format + postelec+caretakr,
+summary(lm.out <- lm(duration~ invest + polar + 
+          numst2 + crisis,
           data=rawdata))
 ```
 
 This analysis does not consider that some cabinets did not experience failure. Therefore, we can exclude such cases and regress again the same outcome variable on the covariates:
 
 ```{r}
-only.censored <- rawdata[rawdata$censor==1,]
+only.censored <- rawdata[rawdata$ciep12==1,]
 nrow(only.censored)
 
-summary(lm.out.censored <- lm(durat~ invest + polar + 
-          numst + format + postelec+caretakr,
+summary(lm.out.censored <- lm(duration~ invest + polar + 
+          numst2 + crisis,
           data=only.censored))
 ```
 
-If one compares both results, the latter result without cabinets survived until the next election has significantly smaller effects for some covariates (invest, numst, postelec). While the second analysis shows a better diagnostics result (see below), the analysis does not take into account a significant number of cabinets (n=43) in the dataset.
+If one compares both results, the latter result without cabinets survived until the next election has  smaller effects for some covariates (invest, numst2). While the second analysis shows a better diagnostics result (see below), the analysis does not take into account a significant number of cabinets (n=43) in the dataset.
 
 
 ```{r}
@@ -128,9 +133,9 @@ all.para.out <- vector("list",length(model.label))
 
 for (i.model in 1:length(model.label)){
   
-est.res <- flexsurvreg(Surv(durat,censor) ~ 
-                         invest + polar + 
-                         numst + format + postelec+caretakr,
+est.res <- flexsurvreg(Surv(duration,ciep12) ~ 
+                           invest + polar + 
+                          numst2 + crisis,
                          data=rawdata,
                          dist=model.label[i.model])
 all.para.out[[i.model]] <- list(model=model.label[i.model],
@@ -142,6 +147,10 @@ print(est.res)
 }
 
 ```
+
+
+
+
 
 We can plot the hazard functions with 95% confidence intervals (red) against kernel-based smooth nonparametric hazard (black):
 
@@ -172,8 +181,9 @@ We can now switch to Cox PH model keeping the covariate constant:
 
 
 ```{r}
-est.res <- coxph(Surv(durat,censor) ~ invest + polar + 
-              numst + format + postelec+caretakr,data=rawdata)
+est.res <- coxph(Surv(duration,ciep12) ~ 
+                           invest + polar + 
+                          numst2 + crisis,data=rawdata)
 print(est.res)
 
 
@@ -190,25 +200,33 @@ At each time point, the table above gives the number of observations at risk, nu
 Due to the rough data (unit = month), we have tie events at most time points.
 
 
-We can now plot the survival function. The first plot is based on the empirical data, the other plot on the right-hand side is based on the hypothetical situation where:
+We can now plot the survival function and the cumulative hazard function. The first plot is based on the empirical data, the other plot on the right-hand side is based on the hypothetical situation where:
 
 - there is legal requirement of investiture vote.
-- there is no polarization.
+# - there is no polarization.
 - the cabinet has a parliamentary majority.
-- the cabinet has formed after the first attempt right after a parliamentary election.
-- the cabinet is not a care taker government.
+- the coalition negotiation took 30 days.
+#- the cabinet has formed after the first attempt right after a parliamentary election.
+#- the cabinet is not a care taker government.
 
 ```{r}
 
-par(mfrow=c(1,2))
-plot(survfit(est.res))
+par(mfrow=c(2,2))
+plot(survfit(est.res),main="Empirical data: Kaplan-Meier",ylab="Survival")
 plot(survfit(est.res,
-             newdata=data.frame(invest=1,polar=0,numst=1,format=1,postelec=1,caretakr=0
-                                )))
+             newdata=data.frame(invest=1,polar=0,numst2=1,crisis=30
+                                )),main="Empirical data",ylab="Survival")
+
+plot(survfit(est.res),fun="cumhaz",main="Counter factual",ylab="Cumulative hazard")
+plot(survfit(est.res,
+             newdata=data.frame(invest=1,polar=0,numst2=1,crisis=30
+                                )),fun="cumhaz",main="Counter factual",ylab="Cumulative hazard")
+
 
 ```
+Both upper panels show the survival function based on the empirical data (the left panel) and the counter-factual scenario stated above (the right panel). The left-hand side plot is based on the simple Kaplan-Meier-estimator: $\hat S (t) = \prod_{i=1}^{t-1} \left(1-\frac{d_i}{n_i} \right)$ with $i \in \{1, \ldots, K\}$ being the time points when at least one event was observed. $d_i$ is the number of event at $t_i$ and $n_i$ is the size of the risk set at $t_i$.  
 
-The left-hand side plot is based on the simple Kaplan-Meier-estimator: $\hat S (t) = \prod_{i=1}^{t-1} \left(1-\frac{d_i}{n_i} \right)$ with $i \in \{1, \ldots, K\}$ being the time points when at least one event was observed. $d_i$ is the number of event at $t_i$ and $n_i$ is the size of the risk set at $t_i$.  
+The lower panels show the cumultative hazard function. Due to the proportional hazard property, both functions have the same form, but they differ in the scale (see the y-axis of both panels.)
 
 We can also compare the effect of requirement of investiture votes where the other variables are kept to be the mean:
 
@@ -217,11 +235,11 @@ We can also compare the effect of requirement of investiture votes where the oth
 par(mfrow=c(1,2))
 new.dat <- data.frame(invest=c(0,1), polar=rep(mean(rawdata$polar),2), 
                        fract=rep(mean(rawdata$fract),2),
-                       numst=rep(mean(rawdata$numst),2),format=rep(mean(rawdata$format),2),
-                       postelec=rep(mean(rawdata$postelec),2),
-                       caretakr=rep(mean(rawdata$caretakr),2))
+                       numst2=rep(mean(rawdata$numst2),2),
+                       crisis=rep(mean(rawdata$crisis),2))
 plot(survfit(est.res,newdata=new.dat), 
                             lty=c(1,2),col=c("red","blue"))
+legend("topright",col=c("red","blue"),lty=c(1,2),c("No investiture","Investiture required"),bty="n")
 plot(survfit(est.res,newdata=new.dat),conf.int=T, 
                             lty=c(1,2),col=c("red","blue"))
 
@@ -239,19 +257,19 @@ As we have seen above, there are many tie events due to the duration measure bas
 ```{r}
 
 
-est.res <- coxph(Surv(durat,censor) ~ invest + polar + 
-              numst + format + postelec+caretakr,data=rawdata,
+est.res <- coxph(Surv(duration,ciep12) ~ invest + polar + 
+              numst2 + crisis,data=rawdata,
               ties="efron")
 print(est.res)
 
 
-est.res <- coxph(Surv(durat,censor) ~ invest + polar + 
-              numst + format + postelec+caretakr,data=rawdata,
+est.res <- coxph(Surv(duration,ciep12) ~ invest + polar + 
+              numst2 + crisis,data=rawdata,
               ties="breslow")
 print(est.res)
 
-est.res <- coxph(Surv(durat,censor) ~ invest + polar + 
-              numst + format + postelec+caretakr,data=rawdata,
+est.res <- coxph(Surv(duration,ciep12) ~ invest + polar + 
+              numst2 + crisis,data=rawdata,
               ties="exact")
 print(est.res)
 
@@ -274,9 +292,9 @@ rawdata.with.id <- cbind(id,rawdata)
 
 # --------------------------------------------------------------------------
 # For time varying covariates
-cut.points <- seq(0.5,max(rawdata$durat),by=0.5)
+cut.points <- seq(0.5,max(rawdata$duration),by=0.5)
 cp.data <- survSplit(data = rawdata.with.id, cut = cut.points, 
-     end = "durat",start = "time0", event = "censor")
+     end = "duration",start = "time0", event = "ciep12")
 
 cp.data <- cp.data[order(cp.data$id),]
 
@@ -297,13 +315,11 @@ To the counting process data, we can just apply the binary logit model to estima
 
 ```{r}
 
-est.res <- glm(censor ~ invest + polar + 
-              numst + format + postelec+caretakr,data=cp.data,family=binomial(link="logit"))
+est.res <- glm(ciep12 ~ invest + polar + 
+              numst2 + crisis ,data=cp.data,family=binomial(link="logit"))
 summary(est.res)
 
 ```
-
-
 
 
 
@@ -312,15 +328,13 @@ The above model is however based on the assumption that the hazard is constant o
 The most simple approach is to add the dummy variable for all individual time points:
 
 ```{r}
-# temporal dummy
-est.res <- glm(censor ~ invest + polar + 
-              numst + format + postelec+caretakr +
-              factor(durat)
+est.res <- glm(ciep12 ~ invest + polar + numst2 + crisis +
+              factor(duration)
               ,data=cp.data,family=binomial(link="logit"))
 summary(est.res)
 
 intercept <- coef(est.res)["(Intercept)"]
-time.dummy <- coef(est.res)[substr(names(coef(est.res)),1,13)=="factor(durat)"]
+time.dummy <- coef(est.res)[substr(names(coef(est.res)),1,16)=="factor(duration)"]
 time.hazard <- exp(intercept + time.dummy)
 
 plot(seq(1,59,by=0.5),time.hazard,type="l")
@@ -332,19 +346,16 @@ Alternaitvely, we can include the duration variable itself.
 
 
 ```{r}
-# ---------------------------------------------------------------------------------------------------
-# linear function
-est.res <- glm(censor ~ invest + polar + 
-              numst + format + postelec+caretakr +
-              durat
+est.res <- glm(ciep12 ~ invest + polar + numst2 + crisis  +
+              duration
               ,data=cp.data,family=binomial(link="logit"))
 summary(est.res)
 
 intercept <- coef(est.res)["(Intercept)"]
-time.coef <- coef(est.res)["durat"]
-time.hazard <- exp(intercept + time.coef * (0:max(cp.data$durat)))
+time.coef <- coef(est.res)["duration"]
+time.hazard <- exp(intercept + time.coef * (0:max(cp.data$duration)))
 
-plot(c(0:max(rawdata$durat)),time.hazard,type="l")
+plot(c(0:max(rawdata$duration)),time.hazard,type="l")
 
 ```
 
@@ -355,40 +366,35 @@ The duration variable can be also added after logarithmization:
 ```{r}
 # ---------------------------------------------------------------------------------------------------
 # natural log
-est.res <- glm(censor ~ invest + polar + 
-              numst + format + postelec+caretakr +
-              log(durat)
+est.res <- glm(ciep12 ~ invest + polar + numst2 + crisis +
+              log(duration)
               ,data=cp.data,family=binomial(link="logit"))
 summary(est.res)
 
 intercept <- coef(est.res)["(Intercept)"]
-time.coef <- coef(est.res)["log(durat)"]
-time.hazard <- exp(intercept + time.coef * log((0:max(cp.data$durat))))
+time.coef <- coef(est.res)["log(duration)"]
+time.hazard <- exp(intercept + time.coef * log((0:max(cp.data$duration))))
 
-plot(c(0:max(cp.data$durat)),time.hazard,type="l")
+plot(c(0:max(cp.data$duration)),time.hazard,type="l")
 
 ```
 
 Further, the duration variable can be considered in the quadratic function:
 
 ```{r}
-
-# ---------------------------------------------------------------------------------------------------
-# Quadratic
-durat2 <- cp.data$durat^2
+durat2 <- cp.data$duration^2
 cp.data <- cbind(cp.data,durat2)
-est.res <- glm(censor ~ invest + polar + 
-              numst + format + postelec+caretakr +
-              durat + durat2
+est.res <- glm(ciep12 ~ invest + polar + numst2 + crisis +
+              duration + durat2
               ,data=cp.data,family=binomial(link="logit"))
 summary(est.res)
 
 intercept <- coef(est.res)["(Intercept)"]
-time.coef <- coef(est.res)["durat"]
+time.coef <- coef(est.res)["duration"]
 time.coef2 <- coef(est.res)["durat2"]
-time.hazard <- exp(intercept + time.coef * (0:max(cp.data$durat)) + time.coef2 * (0:max(cp.data$durat))^2 )
+time.hazard <- exp(intercept + time.coef * (0:max(cp.data$duration)) + time.coef2 * (0:max(cp.data$duration))^2 )
 
-plot(c(0:max(cp.data$durat)),time.hazard,type="l")
+plot(c(0:max(cp.data$duration)),time.hazard,type="l")
 
 ```
 
@@ -402,22 +408,20 @@ Now we can estimate Cox PH model by using conditional logit model. For this purp
 # ---------------------------------------------------------------------------------------------------
 cut.points <- unique(rawdata$durat[rawdata$censor == 1])
 cox.cp.data <- survSplit(data = rawdata.with.id, cut = cut.points, 
-     end = "durat",start = "time0", event = "censor")
+     end = "duration",start = "time0", event = "ciep12")
 
 
 head(cp.data,n=20)
 head(cox.cp.data,n=20)
 
-cox.cp.data <- cox.cp.data[order(cox.cp.data$time0),]
-head(cox.cp.data,n=20)
 
 ```
 
 Now we can estimate the Cox model by using clogit:
 
 ```{r}
-clogit(censor ~ invest + polar + 
-              numst + format + postelec+caretakr+
+clogit(ciep12 ~ invest + polar + 
+              numst2 + crisis +
               strata(time0) ,
               method="exact",
               data=cox.cp.data)
@@ -430,8 +434,8 @@ For comparison, we can estimate again the same model by using coxph().
 ```{r}
 # ---------------------------------------------------------------------------------------------------
 # Comparison with coxph()
-est.res <- coxph(Surv(durat,censor) ~ invest + polar + 
-              numst + format + postelec+caretakr,
+est.res <- coxph(Surv(duration,ciep12) ~ invest + polar + 
+              numst2 + crisis,
               ties="exact", 
               data=rawdata)
 print(est.res)
@@ -448,8 +452,8 @@ We first estimate the spline with k=0, which is equivalent to Weibul model.
 ```{r}
 
 
-est.res.k0 <- flexsurvspline(Surv(durat,censor) ~ invest + polar + 
-                   numst + format + postelec+caretakr,data=rawdata,
+est.res.k0 <- flexsurvspline(Surv(duration,ciep12) ~ invest + polar + 
+                   numst2 + crisis ,data=rawdata,
                    k=0,scale="hazard")
 print(est.res.k0)
 
@@ -460,8 +464,8 @@ print(est.res.k0)
 For comparison, here is the result of the above Weibull model:
 
 ```{r}
-flexsurvreg(formula = Surv(durat, censor) ~ invest + polar + 
-    numst + format + postelec + caretakr, data = rawdata, dist = "weibullph")
+flexsurvreg(formula =Surv(duration,ciep12) ~ invest + polar + 
+                   numst2 + crisis, data = rawdata, dist = "weibullph")
 ```
 
 Note that here the parametrization is based on PH and not AFT like the estimate above.
@@ -474,8 +478,8 @@ all.royceton <- vector("list",11)
 all.royceton[[1]] <- est.res.k0
 
 for (k in 1:10){
-  all.royceton[[k+1]] <- flexsurvspline(Surv(durat,censor) ~ invest + polar + 
-                   numst + format + postelec+caretakr,data=rawdata,
+  all.royceton[[k+1]] <- flexsurvspline(Surv(duration,ciep12) ~ invest + polar + 
+                   numst2 +  crisis,data=rawdata,
                    k=k,scale="hazard")
 
 }
@@ -510,7 +514,284 @@ lines(all.royceton[[2]],ci=TRUE,type="hazard",col="blue")
 
 lines(all.royceton[[7]],ci=TRUE,type="hazard"
       ,col="green")
-legend("topleft",lty=1,col=c("red","blue","blue"),c("k=0","k=1","k=6"),bty="n")
+legend("topleft",lty=1,col=c("red","blue","green"),c("k=0","k=1","k=6"),bty="n")
 ```
 
+## Model diagnostics
+
+
+Again, we first estimate a Cox model:
+
+```{r}
+est.res <- coxph(Surv(duration,ciep12) ~ invest + polar + 
+              numst2 + crisis,
+              ties="exact", 
+              data=rawdata)
+print(est.res)
+
+```
+
+Most diagnostics rely on the residuals from the result above. Event history models know various kinds of residuals. For  the output object produced by **coxph()** we can use **resid()** to easily obtain the following residuals:
+
+- martingale 
+- deviance
+- score
+- schoenfeld
+- dfbeta
+- dfbetas
+- scaledsch
+- partial
+
+
+
+### Cox Snell residuals
+
+Cox-Snell residuals are defined as the estimated integrated hazard: $r_{CS_i}= \hat H_i = \exp(\hat{\beta}'{x}_i) \hat{H}_0(t_i)$ with $\hat{H}_0(t_i) = - \log \hat{S}_0(t) = - \sum_i \log \left( \sum_{j \in R(t_i)} e^{\beta' {x}_j}\right)$ (integrated baseline hazard).  
+
+There is no option for Cox-Snell in **resid()**, however it can be obtained from Martingale residuals due to the following relationship between them: $ M_i  = \delta_i(t) - r_{CS_i} $.  
+
+
+```{r}
+### calculate cox snell from martingale
+cox.snell <- rawdata$ciep12-resid(est.res,type="martingale")
+
+plot(density(cox.snell[rawdata$ciep12==1],from=0,to=5),ylim=c(0,1),ylab="Density",xlab="Cox Snell Residuals",main="")
+exponential.func <- function(x) dexp(x,1)
+curve(exponential.func,0,5,ylab="f(x)",add=T,col="red",lty=2)
+
+```
+
+If the model is correct, Cox-Snell residuals should be distributed according to the unit exponential distribution (red dotted line in the figure). If it is the case, the cumulative hazard based on the Cox-Snell residuals $H_r(r_{CS})$ should correspond to the Cox-Snell residuals themselves. To obtain $H_r(r_{CS})$, we can use the relationship: $H_r(r_{CS}) = - \log S_r(r_{CS})$. The corresponding survival function based on Cox-Snell can be obtained by using the Kaplan-Meier-estimator.
+
+
+```{r}
+## estimate the cumulative hazard function for residuals;
+H.t <- survfit(coxph(Surv(cox.snell,rawdata$ciep12)~1,method='breslow'),stype=2,ctype=2)
+
+par(mfrow=c(1,2))
+plot(H.t$time,-log(H.t$surv),type='l',xlab='Cox-Snell Residuals', 
+	ylab="H(t) = -log S(t)",
+	main="")
+abline(0,1,col='red',lty=2)
+
+hist(cox.snell,main="Distribution of Cox-Snell Residuals",xlab="Cox-Snell Residuals")
+
+```
+
+The red dotted line in the left-hand panel is the 45-degree line. If the plot is close to the line, Cox-Snell residuals are likely to be distributed according to the unit exponential. There is a larger deviation from the 45-degree line in the range with $r_{CS}>4$, however as the right-hand panel shows, there are only one case there. 
+
+
+#### Martingale Residuals 
+
+Martingale residuals are more intuitive than the Cox-Snell residuals. If the data is represented the counting process, the Martingale residuals are defined as: $M_i(t) = \delta_i - H_i(t) = \delta_i - r_{CS_i}$. 
+
+
+```{r, warning=FALSE}
+
+res.m <- residuals(est.res,type="martingale")
+par(mfrow=c(2,2))
+plot(res.m ~ rawdata$invest,ylab="Martingale Residuas",xlab="Investiture")
+abline(lm(res.m ~ rawdata$invest))
+abline(h=0,col="red")
+plot(res.m ~ rawdata$numst2,ylab="Martingale Residuas",xlab="Majority")
+abline(lm(res.m ~ rawdata$numst2))
+abline(h=0,col="red")
+
+scatter.smooth(rawdata$polar,res.m,ylab="Martingale Residuas",xlab="Polarization")
+abline(h=0,col="red")
+scatter.smooth(rawdata$crisis,res.m,ylab="Martingale Residuas",xlab="Length of negotiation")
+abline(h=0,col="red")
+
+```
+
+The expected martingale residuals conditioned by the different covariates are close to zero, which implies no need to change the functional form of the model.
+
+
+#### Poorly prediced obaservations based on deviance residuals
+
+Martingale residuals have an asymmetrical range between $-\infty$ and $1$, therefore they are strongly skewed. Deviance residuals are rescaled Martingale, which is more symmetrical: $D_i= sign(M_i(t))\sqrt{-2 \left[ M_i(t) + \delta_i \log(\delta_i-M_i(t) ) \right]}$.
+
+
+```{r}
+res.dev <- residuals(est.res,type="deviance")
+
+par(mfcol=c(2,3))
+scatter.smooth(res.m,ylab="Martingale",xlab="obs",main="Martingale")
+abline(h=0,col="red")
+hist(res.m,main="",xlab="Martingale")
+scatter.smooth(res.dev,ylab="Deviance",xlab="obs",main="Deviance")
+abline(h=0,col="red")
+hist(res.dev,main="",xlab="Deviance")
+
+plot(res.m,res.dev ,xlab="Martingale",ylab="Deviance")
+
+
+
+```
+
+
+To detect the poorly predicted observations, we can plot the deviance residuals against the duration time:
+
+```{r}
+scatter.smooth(rawdata$duration,res.dev,xlab="Duration",ylab="Deviance residuals")
+abline(h=0,lty=2)
+
+#par(mfrow=c(1,2))
+#scatter.smooth(rawdata$polar,res.dev)
+#scatter.smooth(rawdata$crisis,res.dev)
+
+```
+
+The plot gives a systematic relationship between residuals and duration. The cabinets with a short duration tend to have positive deviance residuals, which means these cabinets are predicted to survive longer than observed. Conversely, the cabinets which survived longer tend to be predicted to survive shorter. This can indicate a possible violation of PH property since there is a systematic difference in residuals over time.
+
+
+#### Outlier detection based on the score residuals
+
+The score residuals are obtained case- and covariate-specific. Given we are interested in the covariate $X$, $i$'s case residual is in the counting process representation: $L_i = \int^\infty_0 [X_i(t) - \bar{X}_i (t)] d\hat{M}_i(t)$. $\bar{X}_i (t)$ is the weighted mean of $X$ in the risk set at $t$, and $d\hat{M}_i(t)$ is the change in martingale residuals for $i$ at $t$.
+
+```{r}
+est.res <- coxph(Surv(duration,ciep12) ~ invest + polar + 
+              numst2 + crisis,
+              #ties="exact", ## score is not available for the exact method for tie events.
+              data=rawdata)
+
+res.score <- residuals(est.res,type="score")
+
+par(mfrow=c(2,2))
+for (i in 1:4){
+  plot(res.score[,i],type="l",xlab="obs.",ylab="Score residuals",main=names(coef(est.res))[i])
+  abline(h=0,col="white")
+}
+
+```
+
+Here we see some observations which have a stronger impact on the coefficients, but it is hard to interpret the value itself. It is easier to interpret if we standardize the scale:
+
+```{r}
+
+res.dfbeta <- residuals(est.res,type="dfbeta")
+
+par(mfrow=c(2,2))
+for (i in 1:4){
+  plot(res.dfbeta[,i],type="l",xlab="obs.",ylab="Standardized score residuals",main=names(coef(est.res))[i])
+  abline(h=0,col="white")
+}
+
+```
+
+The scales on the y-axes inform that the impact of individual cases is quite limited and its highest impact changes only 2% of the coefficients. 
+
+
+
+#### Testing the PH property via piecewise regression
+```{r}
+all.res <- NULL
+for (i in 1:3){
+  
+    if (i==1) this.data <- rawdata
+    if (i==2) this.data <- rawdata[rawdata$duration<15,]
+    if (i==3) this.data <- rawdata[rawdata$duration>=15,]
+    est.res <- coxph(Surv(duration,ciep12) ~ invest + polar + 
+                  numst2 + crisis,
+                  ties="exact", 
+                  data=this.data)
+    print(est.res)
+    all.res <- rbind(all.res,coef(summary(est.res))[,c(1,3)])
+}
+
+```
+
+```{r}
+
+source("https://raw.githubusercontent.com/SuShikano/SusumuMiscR/main/R/Coef_CI_Plot.R")
+
+all.res <- all.res[c(1,5,9,2,6,10,3,7,11,4,8,12),]
+all.res[c(4:6,10:12),] <- all.res[c(4:6,10:12),]*10
+rownames(all.res)[c(2,3,5,6,8,9,11,12)] <- rep(c("<15",">=15"),4)
+
+
+coef.ci(estimates = all.res[,1],se=all.res[,2],
+        var.labels = rownames(all.res),xlab="Estimates")
+abline(v=0,lty=2)
+```
+
+
+
+
+#### Testing the PH property via Schoenfeld Residuals
+
+
+
+```{r,fig.dim = c(8, 8)}
+
+est.res <- coxph(Surv(duration,ciep12) ~ invest + polar + 
+              numst2 + crisis,
+              ties="exact", 
+              data=rawdata)
+
+par(mfrow=c(2,2))
+plot(cox.zph(est.res, transform="identity"))
+
+
+```
+
+
+
+```{r}
+
+test.res <- cox.zph(est.res, transform="identity")
+test.res
+```
+
+## Frailty model
+
+
+
+```{r}
+
+est.res <- coxph(Surv(duration,ciep12) ~ invest + polar + 
+              numst2 + crisis,
+              #ties="exact", 
+              robust=FALSE,
+              data=rawdata)
+print(est.res)
+
+```
+
+```{r}
+
+est.res <- coxph(Surv(duration,ciep12) ~ invest + polar + 
+              numst2 + crisis,
+              #ties="exact", 
+              robust=TRUE,
+              data=rawdata)
+print(est.res)
+
+```
+
+
+
+```{r}
+
+est.res <- coxph(Surv(duration,ciep12) ~ invest + polar + 
+              numst2 + crisis,
+              #ties="exact", 
+              cluster=country,
+              data=rawdata)
+print(est.res)
+
+```
+
+
+
+```{r}
+library(frailtyEM)
+
+est.res.frail <- emfrail(Surv(duration,ciep12) ~ invest + polar + 
+              numst2 + crisis + cluster(country),
+                data=rawdata, distribution=emfrail_dist(dist="gamma"))
+print(est.res.frail)
+
+
+```
 
