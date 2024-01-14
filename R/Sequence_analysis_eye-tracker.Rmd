@@ -1,0 +1,339 @@
+---
+title: "Sequence Analysis"
+author: "Susumu Shikano"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+
+library(TraMineR)
+
+```
+
+
+
+
+```{r loadData}
+load(file="../data/eye-tracking.RData")
+
+head(eye.data)
+
+data.for.seq <- eye.data
+```
+
+
+
+
+# Creating the variable of interest
+
+
+```{r}
+nrow(data.for.seq)
+
+
+var.interest <- data.for.seq$row_label
+var.interest[var.interest==""]  <- NA
+
+table(var.interest)
+
+data.for.seq$class_label <- var.interest
+```
+
+
+# reducing the data
+
+
+```{r}
+
+# delete missings
+var.interest <- data.for.seq$class_label
+
+data.for.seq <- data.for.seq[!is.na(var.interest)&nchar(var.interest)>0,]
+var.interest <- var.interest[!is.na(var.interest)&nchar(var.interest)>0]
+
+dim(data.for.seq)
+```
+
+
+
+
+# creating sequence data
+
+```{r}
+library(RColorBrewer)
+
+max.events <- max(table(data.for.seq$ballot.id))
+
+seq.mat <- matrix(NA,ncol=max.events,nrow=length(unique(data.for.seq$ballot.id)))
+  
+for (i.id in 1:length(unique(data.for.seq$ballot.id))){
+  temp.id <- unique(data.for.seq$ballot.id)[i.id]
+  temp.events <- var.interest
+  temp.events <-  temp.events[data.for.seq$ballot.id==temp.id]  
+  seq.mat[i.id,1:length(temp.events)] <- temp.events
+}
+
+seqstatl(seq.mat)
+
+  colfunc.1 <- colorRampPalette(c("lightpink", "red4"))
+  colfunc.2 <- colorRampPalette(c("lightblue1", "blue4"))
+  colpalett <- c(colfunc.1(6),colfunc.2(6))
+  state.ordering <- NULL
+  state.label <- c("FPTP 1","FPTP 2","FPTP 3","FPTP 4","FPTP 5","FPTP 6",
+                   "PR 1","PR 2","PR 3","PR 4","PR 5","PR 6")
+
+
+ballot.seq <- seqdef(seq.mat, 1:ncol(seq.mat),
+                     alphabet = state.ordering,
+                     states = state.label,
+         cpal=colpalett)
+
+
+```
+
+### Some visual inspections of  sequences
+
+The first 10 sequences:
+
+```{r}
+par(mfrow=c(1,2))
+seqiplot(ballot.seq, with.legend = F, border = NA,
+         xaxis=F)
+axis(1)
+
+seqlegend(ballot.seq)
+
+```
+
+All sequences sorted according to the events:
+
+```{r}
+seqIplot(ballot.seq, sortv = "from.start", with.legend = FALSE,
+         xaxis=F)
+axis(1)
+
+```
+
+Relative frequencies based on the above plot:
+
+```{r}
+seqdplot(ballot.seq, with.legend = FALSE, border = NA,
+         xaxis=F)
+axis(1)
+
+```
+
+Entropy over time:
+
+```{r}
+seqHtplot(ballot.seq,
+         xaxis=F)
+axis(1)
+```
+
+
+Modal states over time:
+
+```{r}
+seqmsplot(ballot.seq, with.legend = FALSE, border = NA,
+         xaxis=F)
+axis(1)
+
+```
+
+Mean time plot:
+
+```{r}
+
+seqmtplot(ballot.seq, with.legend = FALSE,
+         xaxis=F)
+axis(1)
+
+
+```
+
+## Computing the edit distance
+
+```{r}
+# edit distance
+scost <- seqsubm(ballot.seq, method = "TRATE")
+
+subst.cost.mat <- seqcost(ballot.seq,method="TRATE")$sm
+
+#coordinates <- cbind(c(1,2,3,4,5,6,1,2,3,4,5,6),
+#                     c(rep(1,6),rep(2,6)))
+#for (i in 1:nrow(subst.cost.mat)){
+#  for (j in 1:ncol(subst.cost.mat)){
+#    subst.cost.mat[i,j] <- sqrt(sum((coordinates[i,] - coordinates[j,])^2))
+#  }
+#}
+subst.cost.mat <- subst.cost.mat/max(subst.cost.mat)
+
+dist.om <- seqdist(ballot.seq, method = "OM", 
+            # insert/deletion cost
+                   indel=1,
+                   #indel = 0.2, 
+            # substitution cost
+                   sm ="CONSTANT",
+                   #sm = subst.cost.mat, 
+            # Normalizing length
+                   norm="none",
+                   #norm="maxlength",
+                   with.missing = TRUE)
+
+```
+
+## Clustering sequences
+
+First, we identify the optimal number of cluters by using the average silhouette methods. The silhouette indicates how similar the cluster members are to their medoid in comparison to the other closes cluster medoid. For more details see:
+
+https://www.datanovia.com/en/lessons/k-medoids-in-r-algorithm-and-practical-examples/#estimating-the-optimal-number-of-clusters
+
+ 
+
+```{r}
+library(factoextra)
+
+print(opt.k <- fviz_nbclust(dist.om, cluster::pam))
+
+```
+
+Based on the result above, we set the number of clusters.
+
+```{r}
+k.clusters <- 2
+
+```
+
+We apply PAM algorithm which cluster the sequences around k medoids, which are the representative sequences.
+
+```{r}
+library(cluster)
+cluster.kmean <- pam(dist.om,k=k.clusters)
+
+```
+
+The identified medoids' IDs are:
+
+```{r}
+cluster.kmean$id.med
+```
+
+For each cluster, we have the following statistics:
+
+```{r}
+cluster.kmean$clusinfo
+```
+
+Visualization of the identiied cluters:
+
+```{r}
+fviz_cluster(cluster.kmean)
+```
+
+We store the cluster membership of individual clusters:
+
+```{r}
+cl.km.fac <- cluster.kmean$clustering
+
+```
+
+
+## Checking clusters
+
+All sequences in each cluster:
+
+```{r, fig.width = 6,fig.height = 6}
+seqIplot(ballot.seq, group = cl.km.fac, sortv = "from.start")
+```
+
+State distribution plots for individual clusters:
+
+```{r, fig.width = 6,fig.height = 6}
+seqdplot(ballot.seq, group = cl.km.fac, border = NA)
+```
+
+### Representative sequences
+
+```{r, fig.width = 10,fig.height = 13}
+seqrplot(ballot.seq, diss = dist.om, group = cl.km.fac,
+    border = NA)#,
+         #cpal=c("pink","lightblue","red","blue"))
+```
+
+
+
+## Checking with the further variables
+
+### Size of the clusters
+
+```{r}
+names(cl.km.fac) <- unique(data.for.seq$ballot.id)
+
+table(cl.km.fac)
+```
+
+
+
+### Fixation frequencies and duration
+
+```{r}
+
+
+num.fixation <- table(data.for.seq$ballot.id)[names(cl.km.fac)]
+dur.fixation <- tapply(data.for.seq$duration,as.factor(data.for.seq$ballot.id),sum,na.rm=T)[names(cl.km.fac)]
+
+
+summary(lm(num.fixation~as.factor(cl.km.fac)))
+summary(lm(dur.fixation~as.factor(cl.km.fac)))
+
+
+```
+
+### Which ballot positions?
+
+Mean positions and their standard deviation
+
+
+```{r}
+
+mean.position <- tapply(data.for.seq$ballot.position,as.factor(data.for.seq$ballot.id),mean,na.rm=T)[names(cl.km.fac)]
+var.position <- tapply(data.for.seq$ballot.position,as.factor(data.for.seq$ballot.id),var,na.rm=T)[names(cl.km.fac)]
+
+summary(lm(mean.position ~ as.factor(cl.km.fac)))
+summary(lm(var.position ~ as.factor(cl.km.fac)))
+
+
+```
+
+
+
+### Wich half of the ballot?
+
+
+```{r}
+share.half <- tapply(data.for.seq$ballot.half,as.factor(data.for.seq$ballot.id),mean,na.rm=T)[names(cl.km.fac)]
+
+summary(lm(share.half~as.factor(cl.km.fac)))
+
+```
+
+
+
+### Share of straight ticket
+
+```{r}
+straight.ticket <- tapply(data.for.seq$straight.ticket,as.factor(data.for.seq$ballot.id),max)[names(cl.km.fac)]
+
+summary(lm(straight.ticket~as.factor(cl.km.fac)))
+
+```
+
+
+
+
