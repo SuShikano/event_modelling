@@ -326,13 +326,61 @@ $E(T)=  \frac{1}{\lambda} = \frac{1}{\exp(\beta_0 + \beta_1 X)}$
 
 The right-hand side of this equation can be plugged in to the AFT-model:
 
-$\log(T) = log\left(\frac{1}{\exp(\beta_0 + \beta_1 X)}\right) = - (\beta_0 + \beta_1 X)$
+$\log(T) = log\left(\frac{1}{\exp(\beta_0 + \beta_1 X)}\right) = \log(1) - \log( \exp( (\beta_0 + \beta_1 X)) = - (\beta_0 + \beta_1 X)$
 
 
+
+
+Note that the exponential model with the AFT parametrization is not identical with the linear regression, which regress the logarithmized duration on the same set of covariates:
+
+
+```{r}
+lm.out <- lm(log(duration) ~ 
+                           invest + polar + 
+                          numst2 + crisis,
+                         data=rawdata)
+
+summary(lm.out)
+```
+
+The estimated effects are similar, however, they are not identical. Regarding the covariate "crisis", the effects with different signs were estimated. They are due to the following differences:
+
+- The linear regression with logarithmized duration does not consider the right censored cases.
+- The linear regression with logarithmized duration assumes normal distributions for the errors, while the exponential model with AFT assumes another distribution for the errors (extreme value distributions).
 
 
 
 ### Weibull model
+
+The most important property of the above presented exponential models is that the risk is constant over time. This keeps the model simple, but it is not always appropriate to model empirical data. Therefore, we can switch to another distribution, Weibull distribution. Its PDF is as follows:
+
+$f(t) = \lambda p (\lambda t)^{p-1} \exp^{-(\lambda t)^p}$
+
+If one compare this with that of the exponential distribution ($f(t) = \lambda \exp^{-\lambda t}$), the Weibull distribution has an additional parameter $p$. This parameter is called shape parameter, since it determines whether the PDF is increasing or decreasing function:
+
+
+```{r}
+
+```
+
+
+
+
+
+If $p=1$, the Weibull distribution becomes identical with the exponential distribution. That is, the exponential distribution is a special case of the Weibull distribution.
+
+By applying the same procedure, we can obtain the survival function:
+
+
+ $S(t) = \exp^{-(\lambda t)^p}$
+
+and the hazard function for the Weibull model:
+
+ $h(t) = \lambda p(\lambda t)^{p-1} = p t^{p-1} \lambda^p = p t^{p-1} $
+
+
+
+
 
 ```{r}
 est.res <- flexsurvreg(Surv(duration,ciep12) ~ 
