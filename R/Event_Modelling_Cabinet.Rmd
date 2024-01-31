@@ -297,13 +297,13 @@ By using the exponential function, the right-hand side of the equation is always
 Below we can find the estimation results of the exponential model with the PH parametrization.
 
 ```{r}
-est.res <- flexsurvreg(Surv(duration,ciep12) ~ 
+exp.out <- flexsurvreg(Surv(duration,ciep12) ~ 
                            invest + polar + 
                           numst2 + crisis,
                          data=rawdata,
                          dist="exponential")
 
-print(est.res)
+print(exp.out)
 ```
 
 Note that the estimated effects are those of the covariate on the risk. For the exponential distribution, its mean is known:
@@ -354,44 +354,201 @@ The estimated effects are similar, however, they are not identical. Regarding th
 
 The most important property of the above presented exponential models is that the risk is constant over time. This keeps the model simple, but it is not always appropriate to model empirical data. Therefore, we can switch to another distribution, Weibull distribution. Its PDF is as follows:
 
-$f(t) = \lambda p (\lambda t)^{p-1} \exp^{-(\lambda t)^p}$
+$f(t) =  \frac{p}{\sigma}  \left(\frac{t}{\sigma}\right)^{p-1} \exp^{-\left(\frac{t}{\sigma}\right)^p}$
 
-If one compare this with that of the exponential distribution ($f(t) = \lambda \exp^{-\lambda t}$), the Weibull distribution has an additional parameter $p$. This parameter is called shape parameter, since it determines whether the PDF is increasing or decreasing function:
+If one compare this with that of the exponential distribution ($f(t) = \lambda \exp^{-\lambda t}$), the Weibull distribution has two parameters $p$ and $\sigma$. $p$  is called shape parameter, since it determines the shape of the PDF:
 
 
 ```{r}
+
+temp.func <- function(x) dweibull(x,shape=0.5,scale=1)
+curve(temp.func,0,4,ylab="density",xlab="Duration",main="Weibull distributions with scale=1")
+temp.func <- function(x) dweibull(x,shape=1,scale=1)
+curve(temp.func,0,4,add=T,lty=2)
+temp.func <- function(x) dweibull(x,shape=2,scale=1)
+curve(temp.func,0,4,add=T,lty=3)
+
+legend("topright",
+       lty=c(1,2,3),
+       paste0("shape=",c(0.5,1,2)),
+       col=c(rep("black",3)),
+       bty="n")
 
 ```
 
 
+If $p=1$ and replace $\sigma$ with the inverse of $\lambda$, the Weibull distribution becomes identical with the exponential distribution. That is, the exponential distribution is a special case of the Weibull distribution.
+
+$\sigma$ is called scale parameter and equivalent to the rate parameter ($\lambda$) of the exponential distribution. However, they are not identical, but they are inverse of the other. While $\lambda$ of the exponential distribution is in a positive relationship with the hazard risk, $\sigma$ of the Weibull distribution is in a negative relationship with the hazard and in a positive relationship with the expected duration.
+
+```{r}
+
+temp.func <- function(x) dweibull(x,shape=2,scale=1)
+curve(temp.func,0,4,ylab="density",xlab="Duration",main="Weibull distributions with shape=2")
+temp.func <- function(x) dweibull(x,shape=2,scale=2)
+curve(temp.func,0,4,add=T,lty=2)
+temp.func <- function(x) dweibull(x,shape=2,scale=3)
+curve(temp.func,0,4,add=T,lty=3)
+
+legend("topright",
+       lty=c(1,2,3),
+       paste0("scale=",c(1,2,3)),
+       col=c(rep("black",3)),
+       bty="n")
+
+```
 
 
+By applying the same procedure above, we can obtain the survival function:
 
-If $p=1$, the Weibull distribution becomes identical with the exponential distribution. That is, the exponential distribution is a special case of the Weibull distribution.
+ $S(t) = \exp^{-\left(\frac{t}{\sigma}\right)^p}$
 
-By applying the same procedure, we can obtain the survival function:
+```{r}
+par(mfrow=c(1,2))
+temp.func <- function(x) dweibull(x,shape=0.5,scale=1)
+curve(temp.func,0,4,ylab="density",xlab="Duration",main="PDF")
+temp.func <- function(x) dweibull(x,shape=1.5,scale=1)
+curve(temp.func,0,4,add=T,lty=2)
+temp.func <- function(x) dweibull(x,shape=1.5,scale=2)
+curve(temp.func,0,4,add=T,lty=3)
 
+legend("topright",
+       lty=c(1,2,3),
+       paste0("shape=",c(0.5,1.5,1.5),"; scale=",c(1,1,2)),
+       col=c(rep("black",3)),
+       bty="n")
 
- $S(t) = \exp^{-(\lambda t)^p}$
+temp.func <- function(x) 1-pweibull(x,shape=0.5,scale=1)
+curve(temp.func,0,4,ylab="Survival",xlab="Duration",main="Survival",ylim=c(0,1))
+temp.func <- function(x) 1-pweibull(x,shape=1.5,scale=1)
+curve(temp.func,0,4,add=T,lty=2)
+temp.func <- function(x) 1-pweibull(x,shape=1.5,scale=2)
+curve(temp.func,0,4,add=T,lty=3)
 
-and the hazard function for the Weibull model:
+legend("topright",
+       lty=c(1,2,3),
+       paste0("shape=",c(0.5,1.5,1.5),"; scale=",c(1,1,2)),
+       col=c(rep("black",3)),
+       bty="n")
 
- $h(t) = \lambda p(\lambda t)^{p-1} = p t^{p-1} \lambda^p = p t^{p-1} $
+```
 
+By dividing $f(t)$ by $S(t)$, we obtain the hazard function for the Weibull model:
 
-
+$h(t) = \frac{p}{\sigma}\left(\frac{t}{\sigma}\right)^{p-1} = p t^{p-1} \left(\frac{1}{\sigma}\right)^p$
 
 
 ```{r}
-est.res <- flexsurvreg(Surv(duration,ciep12) ~ 
+par(mfrow=c(1,2))
+temp.func <- function(x) dweibull(x,shape=0.5,scale=1)
+curve(temp.func,0,4,ylab="density",xlab="Duration",main="PDF")
+temp.func <- function(x) dweibull(x,shape=1.5,scale=1)
+curve(temp.func,0,4,add=T,lty=2)
+temp.func <- function(x) dweibull(x,shape=1.5,scale=2)
+curve(temp.func,0,4,add=T,lty=3)
+temp.func <- function(x) dweibull(x,shape=1,scale=2)
+curve(temp.func,0,4,add=T,lty=4)
+
+legend("topright",
+       lty=c(1:4),
+       paste0("shape=",c(0.5,1.5,1.5,1),"; scale=",c(1,1,2,2)),
+       col=c(rep("black",4)),
+       bty="n")
+
+weibull.hazard <- function(x,shape,scale){
+  (shape/scale) * ((x/scale)^(shape-1) )
+}
+temp.func <- function(x) weibull.hazard(x,shape=0.5,scale=1)
+curve(temp.func,0,4,ylab="Hazard",xlab="Duration",main="Hazard",ylim=c(0,4))
+temp.func <- function(x) weibull.hazard(x,shape=1.5,scale=1)
+curve(temp.func,0,4,add=T,lty=2)
+temp.func <- function(x) weibull.hazard(x,shape=1.5,scale=2)
+curve(temp.func,0,4,add=T,lty=3)
+temp.func <- function(x) weibull.hazard(x,shape=1,scale=2)
+curve(temp.func,0,4,add=T,lty=4)
+
+
+legend("topright",
+       lty=c(1:4),
+       paste0("shape=",c(0.5,1.5,1.5,1),"; scale=",c(1,1,2,2)),
+       col=c(rep("black",4)),
+       bty="n")
+
+```
+
+As is clear in the figure above, the hazard function can be increasing or decreasing depending on the shape parameter. In case that the shape parameter is one, the function is constant over time, which is equivalent to the exponential distribution. In this case, the hazard rate takes the inverse of the scale parameter, therefore 1/2.
+
+
+### Estimation of the Weibull model
+
+Like the exponential model, the Weibull model can be estimated in two ways: PH and AFT.  
+
+The PH parametrization links the hazard with the covariate. The Weibull model's hazard is as follows:
+
+$h(t) =  p t^{p-1} \left(\frac{1}{\sigma}\right)^p$
+
+In this function, we link the covariates with the last term, $\left(\frac{1}{\sigma}\right)^p$. This part include the inverse of $\sigma$ which corresponds to $\lambda$ in the exponential model. As is the case in the exponential model, we assume that individual observations differ in this component and linked to the covariate, therefore:  
+
+
+$\left(\frac{1}{\sigma_i}\right)^p = \exp(\beta_0 + \beta_1 x_i)$.
+
+In contrast to $\sigma_i$, the shape parameter $p$ is estimated under the assumption that it is constant for all observations.
+
+```{r, warning=FALSE}
+weibull.ph.out <- flexsurvreg(Surv(duration,ciep12) ~ 
                            invest + polar + 
                           numst2 + crisis,
                          data=rawdata,
                          dist="weibullph")
 
-print(est.res)
+print(weibull.ph.out)
 ```
 
+The estimated  effects of the covariates on the hazard rate are quite similar to those of the exponential model (see below). 
+
+
+```{r}
+print(exp.out)
+```
+
+As discussed above, the difference between both models primarily lies in the shape parameter. If the shape parameter is one, the Weibull model is equivalent to the exponential model. According the above estimation results, the shape parameter is above 1 in its point estimate as well as its 95% confidence interval. This means, the hazard function is not constant, but slightly increasing.
+
+
+```{r}
+temp.func <- function(x) weibull.hazard(x,
+                                  shape=exp(coefficients(weibull.ph.out)["shape"]),
+                                  scale=1/exp(coefficients(weibull.ph.out)["scale"]))
+curve(temp.func,0.01,40,ylab="Hazard",xlab="Duration",main="Hazard",ylim=c(0,.06))
+temp.func <- function(x) weibull.hazard(x,
+                                  shape=exp(coefficients(weibull.ph.out)["shape"]),
+                                  scale=1/exp(coefficients(weibull.ph.out)["scale"]+
+                                              coefficients(weibull.ph.out)["invest"]  ))
+curve(temp.func,0.01,40,add=T,lty=2)
+temp.func <- function(x) weibull.hazard(x,
+                                  shape=exp(coefficients(weibull.ph.out)["shape"]),
+                                  scale=1/exp(coefficients(weibull.ph.out)["scale"]+
+                                              coefficients(weibull.ph.out)["numst2"]  ))
+curve(temp.func,0.01,40,add=T,lty=3)
+
+legend("topright",
+       lty=c(1:3),
+       c("Baseline","+Investiture","+Majority"),
+       col=c(rep("black",3)),
+       bty="n")
+
+```
+
+In the above figure, all the hazard functions are proportional to each other. That is, the ratio between any two hazard functions are constant over time. This is also the case in the exponential model since the hazard functions are flat so that their ratio is always identical. This property is called the proportional hazard property. By using this property, the PH parametrization estimate the effects of covariates on the hazard functions. 
+
+While the estimated effects based on the PH parametrization is straightforward in terms of the hazard, their relationship with the expected duration is not intuitive since the expected value of the Weibull model is as follows:
+
+$E(T) = \sigma \Gamma\left( 1+ \frac{1}{p} \right)$
+
+The expected duration can be more directly linked with the covariates by using the AFT approach:  
+
+$\log(T) = \alpha_0 + \alpha_1 X + \frac{\epsilon}{p}$
+
+with $\epsilon$ being the extreme value distribution.
 
 
 ```{r}
@@ -403,6 +560,11 @@ est.res <- flexsurvreg(Surv(duration,ciep12) ~
 
 print(est.res)
 ```
+
+The estimated shape parameter is identical between both parametrizations. The estimated effects of the covariates have the other sign, which is reasonable since PH links the covariates with the hazard while AFT links them with the expected duration. Between both sets of the extimates, the following relationship is known:
+
+$\beta= - \alpha p$
+
 
 
 ## Estimating parametric models
