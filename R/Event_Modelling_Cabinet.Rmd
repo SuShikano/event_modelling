@@ -2,7 +2,11 @@
 title: 'Event History Modelling: Cabinet Data'
 author: "Susumu Shikano"
 date: "`r Sys.Date()`"
-output: html_document
+output: 
+html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 2
 ---
 
 ```{r setup, include=FALSE}
@@ -75,7 +79,7 @@ Surv(rawdata$duration,rawdata$ciep12)
 
 ```
 
-## OLS 
+## Why not OLS? 
 
 Before estimating the event history models, we can regress the duration variable on the covariates:
 
@@ -566,10 +570,44 @@ The estimated shape parameter is identical between both parametrizations. The es
 $\beta= - \alpha p$
 
 
+## Parameter estimation via maximum likelihood
 
-## Estimating parametric models
+For data with the full duration time, that is, if all observations have the exact measured duration, building the likelihood function is straightforward:
 
-We first estimate the following six parametric models:
+$\mathfrak{L} = \prod^n_{i=1}  f(t_i)$
+
+If we have right-censored cases, however, their likelihood is differently obtained by using the survival rate:
+
+$\mathfrak{L} = \prod^n_{i=1} \left\{ f(t_i) \right\}^{\delta_i} \left\{ S(t_i) \right\}^{1-\delta_i}$
+
+$\delta_i$ is the dummy variable whether the event takes place in the observation $i$ or not.
+
+
+
+## Relationship between f(t), S(t) and h(t) in general
+
+Above we have seen the relationship between $f(t)$, $S(t)$ and $h(t)$ for the exponential and Weibull models. Here, we examine their relationship in a more general way.
+
+Per definition, the following is known:
+
+- Survival rate: $S(t) = 1-F(t) = 1- \int^t_0 \lambda \exp(-\lambda t) d(u)$
+
+- hazard rate: $h(t) = \frac{f(t)}{S(t)}$
+
+From both equations, we can further derive the following:
+
+  - $f(t) =\frac{dF(t)}{d(t)} = \frac{-dS(t)}{d(t)}$
+  - $h(t) =\frac{-dS(t)}{d(t)}/S(t) = \frac{-d \log S(t)}{dt}$
+  - $H(t) \equiv \int^t_0 h(u) du=-\log S(t)$
+  - $S(t) =\exp\left( -\int^t_0 h(u) du \right)  = \exp(-H(t))$
+  - $f(t) =h(t)S(t)=h(t)\exp(-H(t))$
+  
+
+
+
+## Estimating further parametric models
+
+We estimate the following six parametric models:
 
 - Exponential
 - Weibull
